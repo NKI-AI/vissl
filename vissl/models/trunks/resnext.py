@@ -120,9 +120,9 @@ class ResNeXt(nn.Module):
         model_relu1 = model.relu
         model_maxpool = model.maxpool
         model_avgpool = model.avgpool
-        model_layer1 = model._make_layer(Bottleneck, dim_inner, n1)
-        model_layer2 = model._make_layer(Bottleneck, dim_inner * 2, n2, stride=2)
-        model_layer3 = model._make_layer(Bottleneck, dim_inner * 4, n3, stride=2)
+        model_layer1 = model._make_layer(block, dim_inner, n1)
+        model_layer2 = model._make_layer(block, dim_inner * 2, n2, stride=2)
+        model_layer3 = model._make_layer(block, dim_inner * 4, n3, stride=2)
 
         # For some models like Colorization https://arxiv.org/abs/1603.08511,
         # due to the higher spatial resolution desired for pixel wise task, we
@@ -130,7 +130,7 @@ class ResNeXt(nn.Module):
         # behavior so support only those.
         safe_stride = SUPPORTED_L4_STRIDE(self.trunk_config.LAYER4_STRIDE)
         model_layer4 = model._make_layer(
-            Bottleneck, dim_inner * 8, n4, stride=safe_stride
+            block, dim_inner * 8, n4, stride=safe_stride
         )
 
         # we mapped the layers of resnet model into feature blocks to facilitate
