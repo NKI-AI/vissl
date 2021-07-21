@@ -95,6 +95,7 @@ class GenericSSLDataset(VisslDatasetBase):
         self._subset_initialized = False
         self.image_and_label_subset = None
         self._verify_data_sources(split, dataset_source_map)
+
         self._get_data_files(split)
 
         if len(self.label_sources) > 0 and len(self.label_paths) > 0:

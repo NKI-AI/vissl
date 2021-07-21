@@ -9,8 +9,8 @@ config:
         # GROUPS: 32
         # WIDTH_PER_GROUP: 4
         ######## resnext101-32x8d #######
-        # GROUPS: 32
-        # WIDTH_PER_GROUP: 8
+        GROUPS: 32
+        WIDTH_PER_GROUP: 8
         ######## resnext101-32x16d #######
         # GROUPS: 32
         # WIDTH_PER_GROUP: 16

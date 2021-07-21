@@ -256,6 +256,7 @@ def get_data_files(split, dataset_config):
     Once we have the dataset original paths, we replace the path with the local paths
     if the data was copied to local disk.
     """
+
     assert len(dataset_config[split].DATASET_NAMES) == len(
         dataset_config[split].DATA_SOURCES
     ), "len(data_sources) != len(dataset_names)"
