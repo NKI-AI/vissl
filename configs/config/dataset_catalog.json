@@ -1,1 +1,1 @@
-{"tcga_tile_folder": {"train": ["/mnt/archive/projectdata/data_tcga/test/train", "<lbl_path>"], "val": ["/mnt/archive/projectdata/data_tcga/test/test", "<lbl_path>"]}}
+{"tcga_tile_folder": {"train": ["/mnt/archive/projectdata/data_tcga/test/train", "<lbl_path>"]}}

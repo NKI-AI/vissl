@@ -1,6 +1,6 @@
 
 data_folder= "tcga_tile_folder"
-train_imgs_path=  "/mnt/archive/projectdata/data_tcga/duct_detection_tiling_20210719_512_2mpp"
+train_imgs_path= "/mnt/archive/projectdata/data_tcga/duct_detection_tiling_20210719_512_2mpp"
 json_data = {
         data_folder: {
             "train": [train_imgs_path, "<lbl_path>"],
