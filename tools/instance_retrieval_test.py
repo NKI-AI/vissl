@@ -14,7 +14,6 @@ import torch
 import torchvision
 from classy_vision.generic.util import copy_model_to_gpu, load_checkpoint
 from fvcore.common.file_io import PathManager
-from hydra.experimental import compose, initialize_config_module
 from vissl.config import AttrDict
 from vissl.models import build_model
 from vissl.utils.checkpoint import (
@@ -23,8 +22,8 @@ from vissl.utils.checkpoint import (
 )
 from vissl.utils.env import set_env_vars
 from vissl.utils.hydra_config import (
+    compose_hydra_configuration,
     convert_to_attrdict,
-    is_hydra_available,
     print_cfg,
 )
 from vissl.utils.instance_retrieval_utils.data_util import (
@@ -145,7 +144,7 @@ def get_train_features(
                     img = image_helper.load_and_prepare_image(fname_in, roi=None)
 
             with PerfTimer("extract_features", PERF_STATS):
-                img_scalings = cfg.IMG_RETRIEVAL.IMG_SCALINGSS or [1]
+                img_scalings = cfg.IMG_RETRIEVAL.IMG_SCALINGS or [1]
                 activation_maps = extract_activation_maps(img, model, img_scalings)
 
             if verbose:
@@ -642,8 +641,8 @@ def validate_and_infer_config(config: AttrDict):
             config.IMG_RETRIEVAL.TRAIN_PCA_WHITENING
         ), "PCA Whitening is built-in to the RMAC algorithm and is required"
         assert (
-            not config.IMG_RETRIEVAL.IMG_SCALINGS
-        ), "img_scalings is incompatible with the rmac algorithm."
+            len(config.IMG_RETRIEVAL.IMG_SCALINGS) == 1
+        ), "Multiple image scalings is not compatible with the rmac algorithm."
 
     return config
 
@@ -668,13 +667,11 @@ def main(args: Namespace, config: AttrDict):
 
 
 def hydra_main(overrides: List[Any]):
-    with initialize_config_module(config_module="vissl.config"):
-        cfg = compose("defaults", overrides=overrides)
+    cfg = compose_hydra_configuration(overrides)
     args, config = convert_to_attrdict(cfg)
     main(args, config)
 
 
 if __name__ == "__main__":
     overrides = sys.argv[1:]
-    assert is_hydra_available(), "Make sure to install hydra"
     hydra_main(overrides=overrides)
