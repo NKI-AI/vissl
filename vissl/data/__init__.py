@@ -28,6 +28,7 @@ from vissl.data.synthetic_dataset import SyntheticImageDataset
 from vissl.data.torchvision_dataset import TorchvisionDataset
 from vissl.utils.misc import set_dataloader_seeds, setup_multiprocessing_method
 
+from vissl.data.dlup_dataset import DLUPSlideImageDataset
 
 __all__ = [
     "AirstoreDataset",
@@ -43,6 +44,7 @@ DATASET_SOURCE_MAP = {
     "disk_folder": DiskImageDataset,
     "torchvision_dataset": TorchvisionDataset,
     "synthetic": SyntheticImageDataset,
+    "dlup_wsi": DLUPSlideImageDataset
 }
 
 
