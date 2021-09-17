@@ -9,6 +9,7 @@ python3 tools/run_distributed_engines.py \
     config.DATA.TRAIN.ENABLE_QUEUE_DATASET=true \
     config.DATA.TRAIN.BATCHSIZE_PER_REPLICA=256 \
     config.OPTIMIZER.use_larc=true \
+    config.OPTIMIZER.num_epochs=200 \
     config.MODEL.TRUNK.RESNETS.WIDTH_PER_GROUP=8 \
     config.MODEL.AMP_PARAMS.USE_AMP=true \
     config.MODEL.ACTIVATION_CHECKPOINTING.USE_ACTIVATION_CHECKPOINTING=true \

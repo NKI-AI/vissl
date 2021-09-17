@@ -13,7 +13,7 @@ python3 tools/run_distributed_engines.py \
     config.MODEL.AMP_PARAMS.USE_AMP=true \
     config.MODEL.ACTIVATION_CHECKPOINTING.USE_ACTIVATION_CHECKPOINTING=true \
     config.MODEL.ACTIVATION_CHECKPOINTING.NUM_ACTIVATION_CHECKPOINTING_SPLITS=4 \
-    config.CHECKPOINT.DIR="./checkpoints/resnext101328d_mocov2" \
+    config.CHECKPOINT.DIR="./checkpoints/resnext101328d_mocov2_testamp" \
     config.HOOKS.TENSORBOARD_SETUP.USE_TENSORBOARD=true \
     config.DISTRIBUTED.INIT_METHOD=tcp \
     config.DISTRIBUTED.NUM_NODES=1 \

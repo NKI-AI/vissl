@@ -54,6 +54,7 @@ DATA_SOURCES_WITH_SUBSET_SUPPORT = {
     "disk_folder",
     "torchvision_dataset",
     "synthetic",
+    "tile_dataset"
 }
 
 

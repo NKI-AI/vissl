@@ -53,10 +53,10 @@ config:
     TRUNK:
       NAME: resnet
       RESNETS:
-        DEPTH: 50
+        DEPTH: 18
     HEAD:
       PARAMS: [
-        ["swav_head", {"dims": [2048, 2048, 128], "use_bn": True, "num_clusters": [3000]}],
+        ["swav_head", {"dims": [512, 512, 128], "use_bn": True, "num_clusters": [3000]}],
       ]
     TEMP_FROZEN_PARAMS_ITER_MAP: [
       ['module.heads.0.prototypes0.weight', 313],

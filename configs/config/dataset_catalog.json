@@ -1,1 +1,4 @@
-{"tcga_tile_folder": {"train": ["/mnt/archive/projectdata/data_tcga/test/train", "<lbl_path>"]}}
+{
+    "tcga_tile_folder": {"train": ["/mnt/archive/projectdata/data_tcga/duct_detection_tiling_20210719_512_2mpp", ""], "test": ["/mnt/archive/projectdata/data_tcga/test/test", ""]},
+    "tcga_tile_folder_lisa": {"train": ["/home/sdoyle/duct_detection_tiling_20210719_512_2mpp", ""], "test": ["", ""]}
+}

@@ -150,6 +150,7 @@ class SelfSupervisionTask(ClassificationTask):
             self.available_splits.append("TEST")
         if not self.config.TEST_ONLY:
             self.available_splits.append("TRAIN")
+
         return self
 
     def set_amp_args(self):
