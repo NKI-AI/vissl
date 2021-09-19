@@ -46,7 +46,7 @@ config:
   TRAINER:
     TRAIN_STEP_NAME: standard_train_step
   METERS:
-    name: ""
+    name: "dino_4_gpus_resnet50.yaml"
   MODEL:
     TRUNK:
       NAME: resnet
