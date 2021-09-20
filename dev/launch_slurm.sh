@@ -46,4 +46,4 @@ python -u "$EXP_ROOT_DIR/tools/run_distributed_engines.py" \
   hydra.run.dir="$EXP_ROOT_DIR" \
   config.SLURM.USE_SLURM=true \
   config.SLURM.LOG_FOLDER="$EXP_ROOT_DIR" \
-  config.CHECKPOINT.DIR="$CHECKPOINT_DIR"
+  config.CHECKPOINT.DIR="$CHECKPOINT_DIR" \

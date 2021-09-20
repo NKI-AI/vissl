@@ -32,7 +32,7 @@ def hydra_main(overrides: List[Any]):
     print(f"####### overrides: {overrides}")
     cfg = compose_hydra_configuration(overrides)
     args, config = convert_to_attrdict(cfg)
-
+    print(config['OPTIMIZER'])
     if config.SLURM.USE_SLURM:
         assert (
             is_submitit_available()
@@ -54,5 +54,7 @@ if __name__ == "__main__":
     `python tools/run_distributed_engines.py config=test/integration_test/quick_simclr`
     """
     overrides = sys.argv[1:]
+    print(overrides, 'overrides')
+    assert is_hydra_available(), "Make sure to install hydra"
     overrides.append("hydra.verbose=true")
     hydra_main(overrides=overrides)

@@ -25,6 +25,8 @@ from vissl.data.dataset_catalog import (
 from vissl.data.disk_dataset import DiskImageDataset
 from vissl.data.ssl_dataset import GenericSSLDataset
 from vissl.data.synthetic_dataset import SyntheticImageDataset
+from vissl.data.my_data_source import DlupTileDataset
+
 from vissl.data.torchvision_dataset import TorchvisionDataset
 from vissl.utils.misc import set_dataloader_seeds, setup_multiprocessing_method
 
@@ -43,6 +45,7 @@ DATASET_SOURCE_MAP = {
     "disk_folder": DiskImageDataset,
     "torchvision_dataset": TorchvisionDataset,
     "synthetic": SyntheticImageDataset,
+    "tile_dataset": DlupTileDataset,
 }
 
 
@@ -51,6 +54,7 @@ DATA_SOURCES_WITH_SUBSET_SUPPORT = {
     "disk_folder",
     "torchvision_dataset",
     "synthetic",
+    "tile_dataset"
 }
 
 

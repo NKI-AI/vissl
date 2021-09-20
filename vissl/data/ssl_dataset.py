@@ -4,8 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import sys
 from typing import Any, Callable, Dict, Set
-
 import numpy as np
 from classy_vision.generic.distributed_util import get_world_size
 from fvcore.common.file_io import PathManager
@@ -91,10 +91,15 @@ class GenericSSLDataset(VisslDatasetBase):
         self.data_limit = self.cfg["DATA"][split].DATA_LIMIT
         self.data_limit_sampling = self._get_data_limit_sampling(cfg, split)
         self.transform = get_transform(self.cfg["DATA"][split].TRANSFORMS)
+
+        print(self.transform, 'transforms')
+
+        print(self.cfg['DATA']['TRAIN'])
         self._labels_init = False
         self._subset_initialized = False
         self.image_and_label_subset = None
         self._verify_data_sources(split, dataset_source_map)
+
         self._get_data_files(split)
 
         if len(self.label_sources) > 0 and len(self.label_paths) > 0:
@@ -103,7 +108,9 @@ class GenericSSLDataset(VisslDatasetBase):
                 f"{len(self.label_sources)} vs. {len(self.label_paths)}"
             )
 
-        for idx in range(len(self.data_sources)):
+
+        for idx in range(len(self.data_sources)+1):
+            print(idx)
             datasource_cls = dataset_source_map[self.data_sources[idx]]
             self.data_objs.append(
                 datasource_cls(
@@ -114,6 +121,9 @@ class GenericSSLDataset(VisslDatasetBase):
                     data_source=self.data_sources[idx],
                 )
             )
+            if idx == len(self.data_sources)-1:
+                print(idx)
+                break
 
     @staticmethod
     def _get_data_limit_sampling(cfg: AttrDict, split: str) -> AttrDict:
@@ -398,6 +408,8 @@ class GenericSSLDataset(VisslDatasetBase):
 
         NOTE: this is deprecated method.
         """
+        print([key for key in dataset_config])
+
         return [key for key in dataset_config if key.lower() in ["train", "test"]]
 
     def get_batchsize_per_replica(self):

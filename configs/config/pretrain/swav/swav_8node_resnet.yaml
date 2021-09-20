@@ -10,12 +10,17 @@ config:
     PERF_STATS:
       MONITOR_PERF_STATS: True
       ROLLING_BTIME_FREQ: 313
+    TENSORBOARD_SETUP:
+        USE_TENSORBOARD: True
+        EXPERIMENT_LOG_DIR: "swav_reference"
+        LOG_PARAMS: False
+        FLUSH_EVERY_N_MIN: 20
   DATA:
     NUM_DATALOADER_WORKERS: 8
     TRAIN:
       DATA_SOURCES: [disk_folder]
       DATASET_NAMES: [imagenet1k_folder]
-      BATCHSIZE_PER_REPLICA: 64
+      BATCHSIZE_PER_REPLICA: 256
       LABEL_TYPE: sample_index    # just an implementation detail. Label isn't used
       TRANSFORMS:
         - name: ImgPilToMultiCrop
@@ -38,7 +43,7 @@ config:
       COLLATE_FUNCTION: multicrop_collator
       MMAP_MODE: True
       COPY_TO_LOCAL_DISK: False
-      COPY_DESTINATION_DIR: /tmp/imagenet1k/
+      COPY_DESTINATION_DIR: /tmp/tile_data/
       DROP_LAST: True
   TRAINER:
     TRAIN_STEP_NAME: standard_train_step
@@ -135,7 +140,6 @@ config:
   MACHINE:
     DEVICE: gpu
   CHECKPOINT:
-    DIR: "."
     AUTO_RESUME: True
     CHECKPOINT_FREQUENCY: 5           # every phase since data is big
     CHECKPOINT_ITER_FREQUENCY: -1    # equals 1epoch of imagenet-1k

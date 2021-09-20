@@ -19,6 +19,7 @@ from vissl.utils.misc import get_json_data_catalog_file
 from vissl.utils.slurm import get_slurm_dir
 
 
+
 class VisslDatasetCatalog(object):
     """
     A catalog that stores information about the datasets and how to obtain them.
