@@ -33,6 +33,7 @@
 #        +config/pretrain/simclr/my_sub_folder=my_file_name \
 #        +config.MY_NEW_KEY=MY_VALUE
 defaults:
+  - _self_
   # you must specify the base config you want to run
   - config: ???
 
@@ -355,12 +356,6 @@ config:
       # In case of an invalid image, by default a mean image is returned. But using
       # QueueDataset, you can instead return a valid and previously seen image.
       ENABLE_QUEUE_DATASET: False
-      # Whether or not a single example has more than one label.
-      MULTI_LABEL: False
-      # Implementation detail for multi-output, we need to specify the number of classes in
-      # the dataset, as the transformation does not have access to the number of classes.
-      # This can be improved.
-      MULTI_LABEL_NUM_CLASSES: 1000
     TEST:
       # A sampler that cuts the dataset in a deterministic way
       USE_DEBUGGING_SAMPLER: False
@@ -403,12 +398,6 @@ config:
       # In case of an invalid image, by default a mean image is returned. But using
       # QueueDataset, you can instead return a valid and previously seen image.
       ENABLE_QUEUE_DATASET: False
-      # Whether or not a single example has more than one label.
-      MULTI_LABEL: False
-      # Implementation detail for multi-output, we need to specify the number of classes in
-      # the dataset, as the transformation does not have access to the number of classes.
-      # This can be improved.
-      MULTI_LABEL_NUM_CLASSES: 1000
 
   # ----------------------------------------------------------------------------------- #
   # METERS
@@ -515,6 +504,7 @@ config:
       # a dedicated FSDP wrapping: the number provided here is the number of
       # parameters that serves as threshold to decide if a layer is "big"
       AUTO_WRAP_THRESHOLD: 0
+      AMP_TYPE: "01"
       # Parameters of fairscale FSDP
       flatten_parameters: True
       mixed_precision: True
@@ -1076,15 +1066,32 @@ config:
   # CLUSTERFIT APPROACH (https://arxiv.org/abs/1912.03330)
   # ----------------------------------------------------------------------------------- #
   CLUSTERFIT:
+    # Where to write down the resulting artifacts (dataset based on cluster fit)
+    OUTPUT_DIR: "."
+    # How many iterations to use for the clustering algorighm (example: k-means)
+    NUM_ITER: 50
+    # How many clusters to create
     NUM_CLUSTERS: 16000
-    # currently we only support faiss backend for clustering.
+    # How many features to consider to find the clusters where "-1" means that the
+    # full dataset is used to compute the centroids
+    DATA_LIMIT: -1
+    # Parameters used for the sampling in case DATA_LIMIT >= 0
+    DATA_LIMIT_SAMPLING:
+      SEED: 0
+    # We only support "faiss" backend for clustering
     CLUSTER_BACKEND: "faiss"
-    # how many iterations to use for faiss
-    N_ITER: 50
+    # Where to find the extracted features and whether or not we should extract them
     FEATURES:
+      EXTRACT: False
+      PATH: "."
       DATA_PARTITION: "TRAIN"
+      TEST_PARTITION: "TEST"
       DATASET_NAME: ""
       LAYER_NAME: ""
+      # Whether or not to apply dimensionality reduction to the extract features
+      # * if 0, dimensionality reduction is disabled
+      # * if > 0, define the number of target dimensions of PCA
+      DIMENSIONALITY_REDUCTION: 0
 
   # ----------------------------------------------------------------------------------- #
   # TRAINER (define your train step)
@@ -1251,28 +1258,55 @@ config:
   # INSTANCE RETRIEVAL (benchmark)
   # ----------------------------------------------------------------------------------- #
   IMG_RETRIEVAL:
+    ########################## Dataset Information #############################
+    TRAIN_DATASET_NAME: "Oxford"
+    EVAL_DATASET_NAME: "Paris"
+    # Data path and names of train/eval data: Oxford | Paris | whitening
+    DATASET_PATH: ""
+    # valid only if we are training whitening on the whitening dataset
+    WHITEN_IMG_LIST: ""
+    # Path to the compute_ap binary to evaluate Oxford / Paris
+    EVAL_BINARY_PATH: ""
+    # Sets data limits for the number of training, query, and database samples.
+    DEBUG_MODE: False
+    # Number of training samples to use. -1 uses all the samples in the dataset.
+    NUM_TRAINING_SAMPLES: -1
+    # Number of query samples to use. -1 uses all the samples in the dataset.
+    NUM_QUERY_SAMPLES: -1
+    # Number of database samples to use. -1 uses all the samples in the dataset.
+    NUM_DATABASE_SAMPLES: -1
+    # Whether or not to use distractor images.
+    USE_DISTRACTORS: False
+    # IMG_SCALINGS=List[int], where features are extracted for each
+    # image scale and averaged. Default is [1], meaning that only the full
+    # image is processed.
+    IMG_SCALINGS: [1]
+    ######################## Features Processing Hypers #######################
     # Resize larger side of image to RESIZE_IMG pixels (e.g. 800)
     RESIZE_IMG: 1024
     # Use spatial levels (e.g. 3)
     SPATIAL_LEVELS: 3
     # output dimension of PCA
     N_PCA: 512
-    # Data path and names of train/eval data: Oxford | Paris | whitening
-    DATASET_PATH: ""
-    TRAIN_DATASET_NAME: "Oxford"
-    EVAL_DATASET_NAME: "Paris"
-    # Path to the compute_ap binary to evaluate Oxford / Paris
-    EVAL_BINARY_PATH: ""
-    # Path to a temporary directory to store features and scores
-    TEMP_DIR: "/tmp/instance_retrieval/"
     # Whether to apply PCA/whitening or not
-    SHOULD_TRAIN_PCA_OR_WHITENING: True
-    # gem | rmac | l2_norm
+    TRAIN_PCA_WHITENING: True
+    # gem | rmac
     FEATS_PROCESSING_TYPE: ""
-    # valid only for GeM pooling of features
+    # valid only for GeM pooling of features. Note that GEM_POOL_POWER=1 equates to average pooling.
     GEM_POOL_POWER: 4.0
-    # valid only if we are training whitening on the whitening dataset
-    WHITEN_IMG_LIST: ""
+    # Whether or not to crop the query images with the given region of interests --
+    # Relevant for Oxford, Paris, ROxford, and RParis datasets.
+    # Our experiments with RN-50/rmac show that ROI cropping degrades performance.
+    CROP_QUERY_ROI: False
+    # Whether or not to apply L2 norm after the features have been post-processed.
+    # Normalization is heavily recommended based on experiments run.
+    NORMALIZE_FEATURES: True
+    ######################## Misc #######################
+    # Whether or not to save the retrieval ranking scores (metrics, rankings, similarity scores)
+    SAVE_RETRIEVAL_RANKINGS_SCORES: True
+    # Whether or not to save the features that were extracted
+    SAVE_FEATURES: False
+
 
   # ----------------------------------------------------------------------------------- #
   # K-NEAREST NEIGHBOR (benchmark)

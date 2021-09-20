@@ -8,6 +8,7 @@ import math
 import os
 import subprocess
 from collections import OrderedDict
+from typing import List
 
 import numpy as np
 import scipy.io
@@ -24,15 +25,22 @@ from vissl.utils.instance_retrieval_utils.evaluate import (
 from vissl.utils.io import load_file
 
 
+def is_oxford_paris_dataset(dataset_name: str):
+    """
+    Computes whether the specified dataseet name is a revisited version of
+    the oxford and paris datasets. simply looks for pattern "roxford5k"
+    and "rparis6k" in specified dataset_name.
+    """
+    return dataset_name in ["Oxford", "Paris"]
+
+
 def is_revisited_dataset(dataset_name: str):
     """
     Computes whether the specified dataseet name is a revisited version of
     the oxford and paris datasets. simply looks for pattern "roxford5k"
     and "rparis6k" in specified dataset_name.
     """
-    if dataset_name in ["roxford5k", "rparis6k"]:
-        return True
-    return False
+    return dataset_name in ["roxford5k", "rparis6k"]
 
 
 def is_instre_dataset(dataset_name: str):
@@ -40,9 +48,7 @@ def is_instre_dataset(dataset_name: str):
     Returns True if the dataset name is "instre". Helper function used in code
     at several places.
     """
-    if dataset_name == "instre":
-        return True
-    return False
+    return dataset_name == "instre"
 
 
 def is_whiten_dataset(dataset_name: str):
@@ -50,9 +56,14 @@ def is_whiten_dataset(dataset_name: str):
     Returns if the dataset specified has name "whitening". User can use any
     dataset they want for whitening.
     """
-    if dataset_name == "whitening":
-        return True
-    return False
+    return dataset_name == "whitening"
+
+
+def is_copdays_dataset(dataset_name: str):
+    """
+    Is the dataset copydays.
+    """
+    return dataset_name in ["copydays"]
 
 
 # pooling + whitening
@@ -77,6 +88,37 @@ def flatten(x: torch.Tensor, keepdims: bool = False):
         for _ in range(y.dim(), x.dim()):
             y = y.unsqueeze(-1)
     return y
+
+
+def get_average_gem(
+    activation_maps: List[torch.Tensor],
+    p: int = 3,
+    eps: float = 1e-6,
+    clamp: bool = True,
+    add_bias: bool = False,
+    keepdims: bool = False,
+):
+    """
+    Average Gem pooling of list of tensors. See #gem below for more information.
+
+    Returns:
+        x (torch.Tensor): Gem pooled tensor
+    """
+    activation_maps = torch.stack(
+        [
+            gem(
+                activation_map,
+                p,
+                eps,
+                clamp,
+                add_bias,
+                keepdims,
+            )
+            for activation_map in activation_maps
+        ]
+    )
+
+    return torch.mean(activation_maps, dim=0)
 
 
 # Credits: Matthijs Douze
@@ -268,7 +310,7 @@ class InstreDataset:
                 sum_ap_val += ap
         return sum_ap / nq, sum_ap_val / len(self.val_subset)
 
-    def score(self, scores, temp_dir, verbose=True):
+    def score(self, scores, verbose=True, temp_dir=None):
         """
         For the input scores of the model, calculate the AP metric
         """
@@ -286,7 +328,7 @@ class RevisitedInstanceRetrievalDataset:
     ready to be used in the code for retrieval evaluations.
     """
 
-    def __init__(self, dataset: str, dir_main: str):
+    def __init__(self, dataset: str, dir_main: str, num_samples=None):
         # Credits: https://github.com/filipradenovic/revisitop/blob/master/python/dataset.py#L6     # NOQA
 
         self.DATASETS = ["roxford5k", "rparis6k"]
@@ -307,7 +349,16 @@ class RevisitedInstanceRetrievalDataset:
         cfg["nq"] = len(cfg["qimlist"])
 
         cfg["dataset"] = dataset
+
         self.cfg = cfg
+
+        self.N_images = self.cfg["n"]
+        self.N_queries = self.cfg["nq"]
+
+        if num_samples is not None:
+            self.N_queries = min(self.N_queries, num_samples)
+            self.N_images = min(self.N_images, num_samples)
+
         logging.info(
             f"Dataset: {dataset}, images: {self.get_num_images()}, "
             f"queries: {self.get_num_query_images()}"
@@ -329,13 +380,13 @@ class RevisitedInstanceRetrievalDataset:
         """
         Number of images in the dataset
         """
-        return self.cfg["n"]
+        return self.N_images
 
     def get_num_query_images(self):
         """
         Number of query images in the dataset
         """
-        return self.cfg["nq"]
+        return self.N_queries
 
     def get_query_roi(self, i: int):
         """
@@ -343,7 +394,7 @@ class RevisitedInstanceRetrievalDataset:
         """
         return self.cfg["gnd"][i]["bbx"]
 
-    def score(self, sim, temp_dir: str):
+    def score(self, sim, temp_dir=None):
         """
         For the input similarity scores of the model, calculate the mean AP metric
         and mean Precision@k metrics.
@@ -363,6 +414,7 @@ class RevisitedInstanceRetrievalDataset:
             g["ok"] = np.concatenate([gnd[i]["easy"]])
             g["junk"] = np.concatenate([gnd[i]["junk"], gnd[i]["hard"]])
             gnd_t.append(g)
+
         mapE, apsE, mprE, prsE = compute_map(ranks, gnd_t, ks)
 
         # search for easy & hard
@@ -400,6 +452,16 @@ class RevisitedInstanceRetrievalDataset:
                 np.around(mprH * 100, decimals=2),
             )
         )
+
+        return {
+            "mAP": {"e": mapE, "m": mapM, "h": mapH},
+            "mp@k": {
+                "k": ks,
+                "e": mprE.tolist(),
+                "m": mprM.tolist(),
+                "h": mprH.tolist(),
+            },
+        }
 
 
 # Credits: https://github.com/facebookresearch/deepcluster/blob/master/eval_retrieval.py    # NOQA
@@ -465,12 +527,13 @@ class InstanceRetrievalImageLoader:
         """
         # Read image, get aspect ratio, and resize such as the largest side equals S
         with PathManager.open(fname, "rb") as f:
-            im = Image.open(f).convert(mode="RGB")
-        im_resized, ratio = self.apply_img_transform(im)
+            img = Image.open(f).convert(mode="RGB")
+        im_resized, ratio = self.apply_img_transform(img)
         # If there is a roi, adapt the roi to the new size and crop. Do not rescale
         # the image once again
         if roi is not None:
             # ROI format is (xmin,ymin,xmax,ymax)
+            roi = np.array(roi)
             roi = np.round(roi * ratio).astype(np.int32)
             im_resized = im_resized[:, roi[1] : roi[3], roi[0] : roi[2]]
         return im_resized
@@ -486,10 +549,106 @@ class InstanceRetrievalImageLoader:
         # (https://github.com/python-pillow/Pillow/issues/835)
         with PathManager.open(img_path, "rb") as f:
             img = Image.open(f).convert("RGB")
+
+        im_resized, ratio = self.apply_img_transform(img)
+        # If there is a roi, adapt the roi to the new size and crop. Do not rescale
+        # the image once again
         if roi is not None:
-            im_resized = img.crop(roi)
-        im_resized, _ = self.apply_img_transform(img)
+            # ROI format is (xmin,ymin,xmax,ymax)
+            roi = np.array(roi)
+            roi = np.round(roi * ratio).astype(np.int32)
+            im_resized = im_resized[:, roi[1] : roi[3], roi[0] : roi[2]]
         return im_resized
+
+
+class GenericInstanceRetrievalDataset:
+    """
+    A dataset class for reading images from a folder in the following simple format:
+        /path/to/dataset
+            - image_0.jpg
+            ...
+            - image_N.jpg
+
+    The other datasets are in the process of being deprecated, currently this is
+    available for use as a database or train split.
+    """
+
+    def __init__(
+        self,
+        data_path: str,
+        num_samples: int = None,
+    ):
+        # Credits: https://github.com/filipradenovic/revisitop/blob/master/python/dataset.py#L6     # NOQA
+
+        self.data_path = data_path
+
+        self.query_filenames = None
+        self.database_filenames = self._get_filenames(self.data_path)
+        self.N_images = len(self.database_filenames)
+        self.N_queries = None
+
+        if num_samples is not None:
+            self.N_images = min(self.N_images, num_samples)
+
+        logging.info(f"Number of images: {self.get_num_images()}, ")
+
+    def _get_filenames(self, data_path: str):
+        fnames = []
+
+        for fname in sorted(PathManager.ls(data_path)):
+            # Only put images in fnames.
+            if not fname.endswith(".jpg"):
+                continue
+
+            full_fname = os.path.join(data_path, fname)
+            fnames.append(full_fname)
+
+        return np.array(fnames)
+
+    def get_filename(self, i: int):
+        """
+        Return the image filepath for the db image
+        """
+        return self.database_filenames[i]
+
+    def get_query_filename(self, i: int):
+        """
+        Rerurn the image filepath for the query image
+        """
+        logging.warn("GenericDataset does not yet have #get_query_filename support.")
+
+        raise NotImplementedError
+
+    def get_num_images(self):
+        """
+        Number of images in the dataset
+        """
+        return self.N_images
+
+    def get_num_query_images(self):
+        """
+        Number of query images in the dataset
+        """
+        logging.warn("GenericDataset does not yet support query images.")
+
+        raise NotImplementedError
+
+    def get_query_roi(self, i: int):
+        """
+        GenericDataset does not yet have query_roi support
+        """
+        logging.warn("GenericDataset does not yet have query_roi support.")
+
+        return None
+
+    def score(self, sim, temp_dir=None):
+        """
+        For the input similarity scores of the model, calculate the mean AP metric
+        and mean Precision@k metrics.
+        """
+        logging.warn("GenericDataset does not yet have #score support.")
+
+        raise NotImplementedError
 
 
 class InstanceRetrievalDataset:
@@ -558,11 +717,11 @@ class InstanceRetrievalDataset:
         self.lab_root = f"{self.path}/lab/"
         self.img_root = f"{self.path}/jpg/"
         logging.info(f"Loading data: {self.path}")
-        lab_filenames = np.sort(os.listdir(self.lab_root))
+        lab_filenames = np.sort(PathManager.ls(self.lab_root))
         # Get the filenames without the extension
         self.img_filenames = [
             e[:-4]
-            for e in np.sort(os.listdir(self.img_root))
+            for e in np.sort(PathManager.ls(self.img_root))
             if e[:-4] not in self.blacklisted
         ]
 
@@ -648,8 +807,10 @@ class InstanceRetrievalDataset:
         Compute the mean AP for a given single query
         """
         rnk = np.array(self.img_filenames[: self.N_images])[idx]
+
         with PathManager.open(f"{temp_dir}/{self.q_names[i]}.rnk", "w") as f:
             f.write("\n".join(rnk) + "\n")
+
         cmd = (
             f"{self.eval_binary_path} {self.lab_root}{self.q_names[i]} "
             f"{temp_dir}/{self.q_names[i]}.rnk"
@@ -682,3 +843,170 @@ class InstanceRetrievalDataset:
         Get the ROI for the query image that we want to test retrieval
         """
         return self.q_roi[self.q_names[i]]
+
+
+class CopyDaysDataset:
+    """
+    A dataset class used for the Copydays dataset.
+    """
+
+    query_splits = (
+        ["original", "strong"]
+        + ["jpegqual_%d" % i for i in [3, 5, 8, 10, 15, 20, 30, 50, 75]]
+        + ["crops_%d" % i for i in [10, 15, 20, 30, 40, 50, 60, 70, 80]]
+    )
+
+    database_splits = ["original"]
+
+    def __init__(
+        self, data_path: str, num_samples: int = None, use_distractors: bool = False
+    ):
+        # Credits: https://github.com/filipradenovic/revisitop/blob/master/python/dataset.py#L6     # NOQA
+
+        self.data_path = data_path
+
+        self.query_filenames = self._get_filenames(
+            os.path.join(self.data_path, "queries")
+        )
+        database_dir_name = (
+            "database_and_distractors" if use_distractors else "database"
+        )
+        self.database_filenames = self._get_filenames(
+            os.path.join(self.data_path, database_dir_name)
+        )
+        self.N_queries = len(self.query_filenames)
+        self.N_images = len(self.database_filenames)
+
+        if num_samples is not None:
+            self.N_queries = min(self.N_queries, num_samples)
+            self.N_images = min(self.N_images, num_samples)
+
+        logging.info(
+            f"Dataset: copydays, images: {self.get_num_images()}, "
+            f"queries: {self.get_num_query_images()}"
+        )
+
+    def _get_filenames(self, data_path: str):
+        fnames = []
+
+        for fname in sorted(PathManager.ls(data_path)):
+            # Only put images in fnames.
+            if not fname.endswith(".jpg"):
+                continue
+
+            full_fname = os.path.join(data_path, fname)
+            fnames.append(full_fname)
+
+        return np.array(fnames)
+
+    def get_filename(self, i: int):
+        """
+        Return the image filepath for the db image
+        """
+        return self.database_filenames[i]
+
+    def get_query_filename(self, i: int):
+        """
+        Rerurn the image filepath for the query image
+        """
+        return self.query_filenames[i]
+
+    def get_num_images(self):
+        """
+        Number of images in the dataset
+        """
+        return self.N_images
+
+    def get_num_query_images(self):
+        """
+        Number of query images in the dataset
+        """
+        return self.N_queries
+
+    def get_query_roi(self, i: int):
+        """
+        Copydays has no concept of ROI.
+        """
+        return None
+
+    def score(self, sim, temp_dir=None):
+        """
+        For the input similarity scores of the model, calculate the mean AP metric
+        and mean Precision@k metrics.
+        """
+        # Map at rank K
+        ks = [1, 5, 10]
+
+        query_filenames = self.query_filenames[0 : sim.shape[0]]
+        database_filenames = self.database_filenames[0 : sim.shape[1]]
+
+        # Calculate map for each query split
+        results = {}
+        for query_split in self.query_splits:
+
+            # Get indeces of split queries.
+            query_indeces = []
+            for i, query_split_filename in enumerate(query_filenames):
+                if query_split in query_split_filename:
+                    query_indeces.append(i)
+
+            # No queries for this split. Used for DEBUG_MODE when imposing data limit.
+            if len(query_indeces) == 0:
+                continue
+
+            # Choose only rows of the split.
+            query_split_filenames = query_filenames[query_indeces]
+            split_sim = sim[query_indeces].T
+
+            # Calculate the ranks.
+            ranks = np.argsort(-split_sim, axis=0)
+
+            has_query_match = False
+            query_matches = []
+            # Find matching database image for each query.
+            for query_filename in query_split_filenames:
+                matching_indices = []
+                for i, database_filename in enumerate(database_filenames):
+                    if self._is_query_database_match(database_filename, query_filename):
+                        has_query_match = True
+                        matching_indices.append(i)
+
+                matches = {"ok": np.array(matching_indices)}
+                query_matches.append(matches)
+
+            # No database matches to compute mAP. Used in DEBUG_MODE when imposing data limit.
+            if not has_query_match:
+                continue
+
+            # Compute macro average precision
+            map_metric, _, mpr, _ = compute_map(ranks, query_matches, ks)
+
+            results[query_split] = {
+                "mAP": map_metric,
+                "mp@k": {"k": ks, "mAP": mpr.tolist()},
+            }
+
+        return results
+
+    def _is_query_database_match(self, database_filepath: str, query_filepath: str):
+        """
+        In the copydays dataset, the labels are based on the filename.
+        e.g. for query with filename: 200000.jpg, the database filename
+        will be one of: (200000.jpg, 200001.jpg, ..., 200099.jpg).
+        """
+        # Distractor images by definition do not match queries.
+        # Distractors must have distractor in filename.
+        database_filename = os.path.split(database_filepath)[-1]
+        if "distractor" in database_filename:
+            return False
+
+        db_filename_number = self._find_image_number(database_filepath)
+        query_filename_number = self._find_image_number(query_filepath)
+
+        return (db_filename_number // 100) == (query_filename_number // 100)
+
+    def _find_image_number(self, filename: str):
+        filename_number = os.path.split(filename)[-1]
+        filename_number = filename_number.split(".")[0].split("_")[-1]
+
+        return int(filename_number)

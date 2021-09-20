@@ -50,6 +50,12 @@ def get_rmac_region_coordinates(H, W, L):
     regions_xywh = []
     for l in range(1, L + 1):
         wl = np.floor(2 * w / (l + 1))
+
+        if wl == 0:
+            # Edge case when w == 0, the height/width will be made 0,
+            # resulting in an invalid crop.
+            continue
+
         wl2 = np.floor(wl / 2 - 1)
         # Center coordinates
         if l + Wd - 1 > 0:
@@ -57,6 +63,7 @@ def get_rmac_region_coordinates(H, W, L):
         else:
             b = 0
         cenW = np.floor(wl2 + b * np.arange(l - 1 + Wd + 1)) - wl2
+
         # Center coordinates
         if l + Hd - 1 > 0:
             b = (H - wl) / (l + Hd - 1)
@@ -76,12 +83,13 @@ def get_rmac_region_coordinates(H, W, L):
             regions_xywh[i][0] -= (regions_xywh[i][0] + regions_xywh[i][2]) - W
         if regions_xywh[i][1] + regions_xywh[i][3] > H:
             regions_xywh[i][1] -= (regions_xywh[i][1] + regions_xywh[i][3]) - H
+
     return np.array(regions_xywh)
 
 
 # Credits: https://github.com/facebookresearch/deepcluster/blob/master/eval_retrieval.py    # NOQA
 # Adapted by: Priya Goyal (prigoyal@fb.com)
-def get_rmac_descriptors(features, rmac_levels, pca=None):
+def get_rmac_descriptors(features, rmac_levels, pca=None, normalize=True):
     """
     RMAC descriptors. Coordinates are retrieved following Tolias et al.
     L2 normalize the descriptors and optionally apply PCA on the descriptors
@@ -95,6 +103,7 @@ def get_rmac_descriptors(features, rmac_levels, pca=None):
     nr = len(rmac_regions)
 
     rmac_descriptors = []
+
     for x0, y0, w, h in rmac_regions:
         desc = features[:, :, y0 : y0 + h, x0 : x0 + w]
         desc = torch.max(desc, 2, keepdim=True)[0]
@@ -104,7 +113,10 @@ def get_rmac_descriptors(features, rmac_levels, pca=None):
 
     rmac_descriptors = torch.cat(rmac_descriptors, 1)
 
-    rmac_descriptors = normalize_L2(rmac_descriptors, 2)
+    if normalize:
+        # Can optionally skip normalization -- not recommended.
+        # the original RMAC paper normalizes.
+        rmac_descriptors = normalize_L2(rmac_descriptors, 2)
 
     if pca is None:
         return rmac_descriptors
@@ -112,10 +124,14 @@ def get_rmac_descriptors(features, rmac_levels, pca=None):
     # PCA + whitening
     npca = pca.n_components
     rmac_descriptors = pca.apply(rmac_descriptors.view(nr * nim, nc))
-    rmac_descriptors = normalize_L2(rmac_descriptors, 1)
+
+    if normalize:
+        rmac_descriptors = normalize_L2(rmac_descriptors, 1)
+
     rmac_descriptors = rmac_descriptors.view(nim, nr, npca)
 
     # Sum aggregation and L2-normalization
     rmac_descriptors = torch.sum(rmac_descriptors, 1)
-    rmac_descriptors = normalize_L2(rmac_descriptors, 1)
+    if normalize:
+        rmac_descriptors = normalize_L2(rmac_descriptors, 1)
     return rmac_descriptors
