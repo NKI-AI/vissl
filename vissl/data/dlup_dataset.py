@@ -37,6 +37,7 @@ class TransformDLUP2HISSL:
         sample["path"] = str(sample["path"])
         # torch and VISSL collate functions can not handle a pathlib.path object, \
         # and want a string instead
+        sample["image"] = sample["image"].convert("RGB")
         return sample
 
 
