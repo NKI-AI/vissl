@@ -60,8 +60,10 @@ class DLUPSlideImageDataset:
     DATA:
         TRAIN:
             DATA_SOURCES: [dlup_wsi]
-            DATASET_NAMES: [test_dlup_wsi_on_1_wsi]
+            DATASET_NAMES: [test_dlup_wsi_on_1_wsi]    or
+            DATA_PATHS: /absolute/path/to/filenames.txt
         DLUP:
+            ROOT_DIR: root dir from which paths in file passed in `path` can be found
             CROP: True
             # MASK: None
             MASK_THRESHOLD: 0.1
