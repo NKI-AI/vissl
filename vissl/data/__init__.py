@@ -188,6 +188,8 @@ def build_dataloader(
     if dataset_config["USE_DEBUGGING_SAMPLER"]:
         worker_init_fn = debugging_worker_init_fn
 
+    logging.info(f"Setting prefetch factor to {dataset_config['PREFETCH_FACTOR']}")
+
     # Create the pytorch dataloader
     dataloader = DataLoader(
         dataset=dataset,
@@ -199,6 +201,7 @@ def build_dataloader(
         sampler=data_sampler,
         drop_last=dataset_config["DROP_LAST"],
         worker_init_fn=worker_init_fn,
+        prefetch_factor=dataset_config["PREFETCH_FACTOR"]
     )
     enable_async_gpu_copy = dataset.cfg["DATA"]["ENABLE_ASYNC_GPU_COPY"]
     dataloader = wrap_dataloader(dataloader, enable_async_gpu_copy, device)
