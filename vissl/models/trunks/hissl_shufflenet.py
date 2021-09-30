@@ -60,6 +60,7 @@ class HisslShuffleNet(nn.Module):
         logging.info(f"Building model: ShuffleNet: {trunk_config.WIDTH}")
         try:
             self.model = WIDTH_CONFIG[trunk_config.WIDTH](pretrained=pretrained)
+            del self.model.fc # Because DDP wants to use all available params
         except KeyError:
             logging.error(
                 f"ShuffleNet config not found. User asked for {trunk_config.width}."
@@ -96,8 +97,6 @@ class HisslShuffleNet(nn.Module):
         # See the forward pass of resnext.py for reference of how additional features
         # can be implemented. For now, we do not require these advanced features.
 
-        output = []
-
         # TODO implement more advanced features. See vissl's resnext implementation
         if len(out_feat_keys) > 0:
             raise NotImplementedError
@@ -108,6 +107,4 @@ class HisslShuffleNet(nn.Module):
         # VISSL expects a list. It either contains one vector (the output), or
         # a list of requested intermediate features
         # For now, we only implement the output of the model.
-        output.append(x)
-
-        return output
+        return [x]
