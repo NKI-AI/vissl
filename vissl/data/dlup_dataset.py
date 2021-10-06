@@ -1,9 +1,10 @@
 # coding=utf-8
 # Copyright (c) HISSL Contributors
 
-import numpy as np
+import logging
 
-from typing import List
+import numpy as np
+from typing import List, Callable
 
 from hissl.utils.io import txt_of_paths_to_list
 
@@ -11,15 +12,35 @@ import pathlib
 
 import PIL.Image
 
+from enum import Enum
+
+from functools import partial
+
+import time
+
 try:
-    from dlup.data.dataset import TiledROIsSlideImageDataset, ConcatDataset
+    from dlup.data.dataset import TiledROIsSlideImageDataset, ConcatDataset, SlideImage
     from dlup.tiling import TilingMode
+    from dlup.background import get_mask, fesi, improved_fesi
+
 except:
     raise ImportError(
         "Make sure that DLUP is installed with 'vissl/third_party/dlup$ python setup.py develop'"
     )
 
 from vissl.config import AttrDict
+
+
+class AvailableMaskTypes(Enum):
+    func: str = "func"
+
+
+class AvailableMaskFunctions(Enum):
+    fesi: Callable = partial(fesi)
+    improved_fesi: Callable = partial(improved_fesi)
+
+    def __call__(self, *args):
+        return self.value(*args)
 
 
 class TransformDLUP2HISSL:
@@ -34,9 +55,10 @@ class TransformDLUP2HISSL:
         pass
 
     def __call__(self, sample):
-        sample["path"] = str(sample["path"])
         # torch and VISSL collate functions can not handle a pathlib.path object, \
         # and want a string instead
+        sample["path"] = str(sample["path"])
+        # Openslide returns RGBA, but most neural networks want RGB
         sample["image"] = sample["image"].convert("RGB")
         return sample
 
@@ -65,8 +87,6 @@ class DLUPSlideImageDataset:
         DLUP:
             ROOT_DIR: root dir from which paths in file passed in `path` can be found
             CROP: True
-            # MASK: None
-            MASK_THRESHOLD: 0.1
             MPP: 0.5
             TILE_SIZE:
                 X: 512
@@ -75,7 +95,12 @@ class DLUPSlideImageDataset:
                 X: 0
                 Y: 0
             TILE_MODE: skip  # skip, overflow, or fit
-
+            MASK:
+                USE_MASK: True
+                MASK_TYPE: func
+                MASK_FUNCTION:
+                    NAME: improved_fesi
+                FOREGROUND_THRESHOLD: 0.1
     ```
     """
 
@@ -88,6 +113,22 @@ class DLUPSlideImageDataset:
         cfg :
             The complete run configuration from the config.yaml file
         Required cfg parameters :
+            DATA.DLUP.MASK.USE_MASK: bool = [True,False]
+                Whether or not to do foreground segmentation
+
+            If USE_MASK is True, the following cfg parameters are required:
+                DATA.DLUP.MASK.MASK_TYPE: str = ["function", "file"]
+                    Compute a mask using one of the implemented functions, or read a mask from file
+                DATA.DLUP.MASK.MASK_FUNCTION.NAME: str = ["fesi", "improved_fesi"]
+                    If DATA.DLUP.MASK.MASK_TYPE == "function", see which function to use from the avilable functions
+                DATA.DLUP.MASK.MASK_FILE.PATH: str = "/absolute/path/to/file.txt"
+                    Not yet implemented. Suggestion is to point to a .txt that holds paths to .ndarray objects
+                    with a similar directory and file structure name as DATA.TRAIN.DATA_PATHS
+
+                Note that MASK_FUNCTION.NAME and MASK_FILE.PATH are mutually exclusive
+
+                DATA.DLUP.MASK.FOREGROUND_THRESHOLD: float = \in [0,1]
+                    threshold as defined in dlup.background.is_foreground
             DATA.DLUP.MPP: float = mpp as defined in `SlideImageDataset`
             DATA.DLUP.TILE_SIZE.X: int = tile_size as defined in `SlideImageDataset`
             DATA.DLUP.TILE_SIZE.Y: int = tile_size as defined in `SlideImageDataset`
@@ -96,13 +137,13 @@ class DLUPSlideImageDataset:
             DATA.DLUP.TILE_MODE: str = tile mode as defined in `SlideImageDataset`
             DATA.DLUP.CROP: bool = crop as defined in `SlideImageDataset`
             optional, not implemented: DATA.DLUP.MASK: str = .txt file holding paths to masks for each WSI
-            DATA.DLUP.MASK_THRESHOLD: float = threshold for the mask as defined in `SlideImageDataset`
+            DATA.DLUP.FOREGROUND_THRESHOLD: float = threshold for the mask as defined in `SlideImageDataset`
             DATA.DLUP.ROOT_DIR: str = root dir from which paths in file passed in `path` can be found
         data_source :
             name of the type of datasource. should be dlup_wsi
         path :
             Path to a .txt file with relative paths to WSIs for this set and fold. Uses cfg.DATA.DLUP.ROOT_DIR
-            as root dir to search for relative file paths from
+            as root dir to search for relative file paths from. This is passed through VISSL from DATA.TRAIN.DATA_PATHS
         split :
             TRAIN or TEST or VAL. We set it up so this is unused by HISSL, as the path should point to a .txt file
             holding all paths to the WSIs used for this split and fold
@@ -127,36 +168,66 @@ class DLUPSlideImageDataset:
         )
         tile_mode = TilingMode[cfg["DATA"]["DLUP"].TILE_MODE]
         crop = cfg["DATA"]["DLUP"].CROP
-        mask_threshold = cfg["DATA"]["DLUP"].MASK_THRESHOLD
+        foreground_threshold = cfg["DATA"]["DLUP"]["MASK"].FOREGROUND_THRESHOLD
         root_dir = cfg["DATA"]["DLUP"].ROOT_DIR
 
-        path = pathlib.Path(path)
-        wsi_paths = txt_of_paths_to_list(path)
+        use_mask = cfg["DATA"]["DLUP"]["MASK"].USE_MASK
 
-        try:
-            mask = self.load_mask(
-                cfg["DATA"]["DLUP"].MASK
-            )  # raises NotImplementedError if called
-        except AttributeError:
-            mask = None  # if 'MASK' is not in config it is set to None, and we don't use a mask
+        if use_mask:
+            logging.info("Using a mask on each WSI to remove background tiles.")
+        else:
+            logging.info("Using all tiles from the WSI, thus not removing background tiles.")
+
+        if use_mask:
+            mask_type = cfg["DATA"]["DLUP"]["MASK"].MASK_TYPE
+            if mask_type not in AvailableMaskTypes.__members__.keys():
+                logging.error(f"{mask_type} is not yet implemented. Choose a type from {AvailableMaskTypes.__members__.keys()}")
+                raise ValueError
+
+            logging.info(f"Using a {mask_type} for masking")
+
+            if mask_type == "func":
+                mask_function_name = cfg["DATA"]["DLUP"]["MASK"]["MASK_FUNCTION"].NAME
+                if mask_function_name not in AvailableMaskFunctions.__members__.keys():
+                    logging.error(
+                        f"{mask_function_name} is not yet implemented. Choose a function from {AvailableMaskFunctions.__members__.keys()}")
+                logging.info(f"Using {mask_function_name} to compute the tissue mask on the fly")
+                mask_func = AvailableMaskFunctions[mask_function_name]
+
+        path = pathlib.Path(path)
+        relative_wsi_paths = txt_of_paths_to_list(path)
 
         # only transforms a Pathlib object to a string to work with the standard pytorch collate. VISSL has a
         # very involved collate functions, see vissl.data.collators, which we would rather not touch to manage
-        # pathlib objects
+        # pathlib objects. Can easily add it though: https://vissl.readthedocs.io/en/v0.1.5/extend_modules/data_collators.html
         transform = TransformDLUP2HISSL()
-
-        single_wsi_datasets: list = [TiledROIsSlideImageDataset.from_standard_tiling(
-            root_dir/wsi_path,
-            mpp,
-            tile_size,
-            tile_overlap,
-            tile_mode,
-            crop,
-            mask,
-            mask_threshold,
-            transform,
-        ) for wsi_path in wsi_paths]
-
+        single_wsi_datasets: list = []
+        for relative_wsi_path in relative_wsi_paths:
+            absolute_wsi_path = root_dir / relative_wsi_path
+            slide_image = SlideImage.from_file_path(absolute_wsi_path)
+            mask = None
+            if use_mask:
+                if mask_type == "func":
+                    t1 = time.time()
+                    mask = get_mask(slide=slide_image, mask_func=mask_func)
+                    t2 = time.time()
+                    dt = int(t2-t1)
+                    logging.info(f"Computing mask for {relative_wsi_path} took {dt} seconds")
+                else:
+                    logging.error(f"We currently only allow MASK_TYPE to be any of {AvailableMaskTypes.__members__.keys()}")
+            single_wsi_datasets.append(
+                TiledROIsSlideImageDataset.from_standard_tiling(
+                    absolute_wsi_path,
+                    mpp,
+                    tile_size,
+                    tile_overlap,
+                    tile_mode,
+                    crop,
+                    mask,
+                    foreground_threshold,
+                    transform,
+                )
+            )
         self.dlup_dataset = ConcatDataset(single_wsi_datasets)
 
     def load_mask(self, mask: str) -> List[np.ndarray]:
