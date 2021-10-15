@@ -2,45 +2,28 @@
 # Copyright (c) HISSL Contributors
 
 import logging
+import pathlib
+import time
+from enum import Enum
+from typing import List
 
 import numpy as np
-from typing import List, Callable
-
+import PIL.Image
 from hissl.utils.io import txt_of_paths_to_list
 
-import pathlib
-
-import PIL.Image
-
-from enum import Enum
-
-from functools import partial
-
-import time
 
 try:
-    from dlup.data.dataset import TiledROIsSlideImageDataset, ConcatDataset, SlideImage
+    from dlup.background import AvailableMaskFunctions, get_mask
+    from dlup.data.dataset import ConcatDataset, SlideImage, TiledROIsSlideImageDataset
     from dlup.tiling import TilingMode
-    from dlup.background import get_mask, fesi, improved_fesi
-
-except:
-    raise ImportError(
-        "Make sure that DLUP is installed with 'vissl/third_party/dlup$ python setup.py develop'"
-    )
+except ImportError:
+    raise ImportError("Make sure that DLUP is installed with 'vissl/third_party/dlup$ python setup.py develop'")
 
 from vissl.config import AttrDict
 
 
 class AvailableMaskTypes(Enum):
     func: str = "func"
-
-
-class AvailableMaskFunctions(Enum):
-    fesi: Callable = partial(fesi)
-    improved_fesi: Callable = partial(improved_fesi)
-
-    def __call__(self, *args):
-        return self.value(*args)
 
 
 class TransformDLUP2HISSL:
@@ -104,9 +87,7 @@ class DLUPSlideImageDataset:
     ```
     """
 
-    def __init__(
-        self, cfg: AttrDict, data_source: str, path: str, split: str, dataset_name: str
-    ):
+    def __init__(self, cfg: AttrDict, data_source: str, path: str, split: str, dataset_name: str):
         """
         Parameters
         ----------
@@ -127,7 +108,7 @@ class DLUPSlideImageDataset:
 
                 Note that MASK_FUNCTION.NAME and MASK_FILE.PATH are mutually exclusive
 
-                DATA.DLUP.MASK.FOREGROUND_THRESHOLD: float = \in [0,1]
+                DATA.DLUP.MASK.FOREGROUND_THRESHOLD: float = [0,1]
                     threshold as defined in dlup.background.is_foreground
             DATA.DLUP.MPP: float = mpp as defined in `SlideImageDataset`
             DATA.DLUP.TILE_SIZE.X: int = tile_size as defined in `SlideImageDataset`
@@ -181,7 +162,9 @@ class DLUPSlideImageDataset:
         if use_mask:
             mask_type = cfg["DATA"]["DLUP"]["MASK"].MASK_TYPE
             if mask_type not in AvailableMaskTypes.__members__.keys():
-                logging.error(f"{mask_type} is not yet implemented. Choose a type from {AvailableMaskTypes.__members__.keys()}")
+                logging.error(
+                    f"{mask_type} is not yet implemented. Choose a type from {AvailableMaskTypes.__members__.keys()}"
+                )
                 raise ValueError
 
             logging.info(f"Using a {mask_type} for masking")
@@ -190,7 +173,8 @@ class DLUPSlideImageDataset:
                 mask_function_name = cfg["DATA"]["DLUP"]["MASK"]["MASK_FUNCTION"].NAME
                 if mask_function_name not in AvailableMaskFunctions.__members__.keys():
                     logging.error(
-                        f"{mask_function_name} is not yet implemented. Choose a function from {AvailableMaskFunctions.__members__.keys()}")
+                        f"{mask_function_name} is not yet implemented. Choose a function from {AvailableMaskFunctions.__members__.keys()}"
+                    )
                 logging.info(f"Using {mask_function_name} to compute the tissue mask on the fly")
                 mask_func = AvailableMaskFunctions[mask_function_name]
 
@@ -211,10 +195,12 @@ class DLUPSlideImageDataset:
                     t1 = time.time()
                     mask = get_mask(slide=slide_image, mask_func=mask_func)
                     t2 = time.time()
-                    dt = int(t2-t1)
+                    dt = int(t2 - t1)
                     logging.info(f"Computing mask for {relative_wsi_path} took {dt} seconds")
                 else:
-                    logging.error(f"We currently only allow MASK_TYPE to be any of {AvailableMaskTypes.__members__.keys()}")
+                    logging.error(
+                        f"We currently only allow MASK_TYPE to be any of {AvailableMaskTypes.__members__.keys()}"
+                    )
             single_wsi_datasets.append(
                 TiledROIsSlideImageDataset.from_standard_tiling(
                     absolute_wsi_path,
