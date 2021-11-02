@@ -23,7 +23,7 @@ from vissl.data.dataset_catalog import (
     register_datasets,
 )
 from vissl.data.disk_dataset import DiskImageDataset
-from vissl.data.ssl_dataset import GenericSSLDataset
+from vissl.data.ssl_dataset_hissl import GenericSSLDatasetHissl as GenericSSLDataset
 from vissl.data.synthetic_dataset import SyntheticImageDataset
 from vissl.data.torchvision_dataset import TorchvisionDataset
 from vissl.utils.misc import set_dataloader_seeds, setup_multiprocessing_method
@@ -188,7 +188,12 @@ def build_dataloader(
     if dataset_config["USE_DEBUGGING_SAMPLER"]:
         worker_init_fn = debugging_worker_init_fn
 
-    logging.info(f"Setting prefetch factor to {dataset_config['PREFETCH_FACTOR']}")
+    try:
+        prefetch_factor = dataset_config['PREFETCH_FACTOR']
+        logging.info(f"Setting prefetch factor to {prefetch_factor}")
+    except KeyError:
+        prefetch_factor = 2
+        logging.info(f"Prefetch factor is set to the default: {prefetch_factor}")
 
     # Create the pytorch dataloader
     dataloader = DataLoader(
@@ -201,7 +206,7 @@ def build_dataloader(
         sampler=data_sampler,
         drop_last=dataset_config["DROP_LAST"],
         worker_init_fn=worker_init_fn,
-        prefetch_factor=dataset_config["PREFETCH_FACTOR"]
+        prefetch_factor=prefetch_factor
     )
     enable_async_gpu_copy = dataset.cfg["DATA"]["ENABLE_ASYNC_GPU_COPY"]
     dataloader = wrap_dataloader(dataloader, enable_async_gpu_copy, device)

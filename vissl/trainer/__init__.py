@@ -16,7 +16,6 @@ import vissl.optimizers.param_scheduler  # NOQA
 from vissl.trainer.train_fsdp_task import SelfSupervisionFSDPTask  # NOQA
 from vissl.trainer.train_sdp_task import SelfSupervisionSDPTask  # NOQA
 from vissl.trainer.train_task import SelfSupervisionTask  # NOQA
-from vissl.trainer.trainer_main import SelfSupervisionTrainer  # noqa
-
+from vissl.trainer.trainer_main_hissl import SelfSupervisionTrainerHissl as SelfSupervisionTrainer  # noqa
 
 __all__ = [k for k in globals().keys() if not k.startswith("_")]
