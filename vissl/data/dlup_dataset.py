@@ -8,11 +8,11 @@ import time
 import PIL.Image
 from hissl.utils.io import txt_of_paths_to_list
 
-
 try:
     from dlup.background import AvailableMaskFunctions, get_mask, load_mask
     from dlup.data.dataset import ConcatDataset, SlideImage, TiledROIsSlideImageDataset
     from dlup.tiling import TilingMode
+    from dlup import DlupUnsupportedSlideError
 except ImportError:
     raise ImportError("Make sure that DLUP is installed with 'vissl/third_party/dlup$ python setup.py develop'")
 
@@ -252,7 +252,11 @@ class DLUPSlideImageDataset:
         logging.info(f"Building dataset...")
         for idx, relative_wsi_path in enumerate(self.relative_wsi_paths):
             absolute_wsi_path = self.root_dir / relative_wsi_path
-            slide_image = SlideImage.from_file_path(absolute_wsi_path)
+            try:
+                slide_image = SlideImage.from_file_path(absolute_wsi_path)
+            except DlupUnsupportedSlideError:
+                logging.warning(f"{absolute_wsi_path} is unsupported. Skipping WSI.")
+                continue
             mask = self.mask_getter.return_mask_from_config(slide_image, idx)
             single_wsi_datasets.append(
                 TiledROIsSlideImageDataset.from_standard_tiling(
