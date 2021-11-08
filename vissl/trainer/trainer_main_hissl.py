@@ -46,17 +46,52 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def _save_extracted_features(
+    def _original_save_extracted_features(
         features,
         targets,
         dist_rank: int,
         chunk_index: int,
         split: str,
         output_folder: str,
-        meta: Dict
     ):
-        #TODO Save hd5 per wsi
-        #TODO if we want to do this, we need to do something smarter, otherwise a million file open and closes.
+        output = {}
+        for layer_name in features.keys():
+            indices = sorted(features[layer_name].keys())
+            if len(indices) > 0:
+                output[layer_name] = {
+                    "inds": np.array(indices),
+                    "features": np.array([features[layer_name][i] for i in indices]),
+                    "targets": np.array([targets[layer_name][i] for i in indices]),
+                }
+
+        for layer_name, layer_features in output.items():
+            out_feat_file = os.path.join(
+                output_folder,
+                f"rank{dist_rank}_chunk{chunk_index}_{split.lower()}_{layer_name}_features.npy",
+            )
+            out_target_file = os.path.join(
+                output_folder,
+                f"rank{dist_rank}_chunk{chunk_index}_{split.lower()}_{layer_name}_targets.npy",
+            )
+            out_inds_file = os.path.join(
+                output_folder,
+                f"rank{dist_rank}_chunk{chunk_index}_{split.lower()}_{layer_name}_inds.npy",
+            )
+            save_file(layer_features["features"], out_feat_file)
+            save_file(layer_features["targets"], out_target_file)
+            save_file(layer_features["inds"], out_inds_file)
+
+
+    @staticmethod
+    def _save_dlup_wsi_features(
+        features,
+        targets,
+        dist_rank: int,
+        chunk_index: int,
+        split: str,
+        output_folder: str,
+        meta: Dict,
+    ):
         with h5py.File(os.path.join(output_folder, f"rank{dist_rank}_chunk{chunk_index}_{split.lower()}_output.hd5"),
                        "a") as f:
             for layer_name in features.keys():
@@ -70,6 +105,72 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                         for item in ['x', 'y', 'h', 'w', 'mpp']:
                             f[f"{meta['path'][i]}/{str(int(meta['region_index'][i]))}/meta/{item}"] = \
                                 meta[item][i]
+
+    @staticmethod
+    def _save_kather_msi_features(
+        features,
+        targets,
+        dist_rank: int,
+        chunk_index: int,
+        split: str,
+        output_folder: str,
+        meta: Dict,
+    ):
+        with h5py.File(os.path.join(output_folder, f"rank{dist_rank}_chunk{chunk_index}_{split.lower()}_output.hd5"),
+                       "a") as f:
+            for layer_name in features.keys():
+                indices = sorted(features[layer_name].keys())
+                if len(indices) > 0:
+                    for i in indices:
+                        f[f"{meta['path'][i]}/{str(i)}/data/{layer_name}"] = \
+                            features[layer_name][i]
+                        f[f"{meta['path'][i]}/{str(i)}/target"] = \
+                            targets[layer_name][i]
+                        for item in ['case_id', 'slide_id']:
+                            f[f"{meta['path'][i]}/{str(i)}/meta/{item}"] = \
+                                meta[item][i]
+
+
+    @staticmethod
+    def _save_extracted_features(
+        self,
+        features,
+        targets,
+        dist_rank: int,
+        chunk_index: int,
+        split: str,
+        output_folder: str,
+        meta: Dict,
+        dataset_name: str
+    ):
+        #TODO Save hd5 per wsi
+        #TODO if we want to do this, we need to do something smarter, otherwise a million file open and closes.
+        if dataset_name == 'DLUPSlideImageDataset':
+            self._save_dlup_wsi_features(features=features,
+                                         targets=targets,
+                                         dist_rank=dist_rank,
+                                         chunk_index=chunk_index,
+                                         split=split,
+                                         output_folder=output_folder,
+                                         meta=meta)
+        elif dataset_name == 'KatherMSIDataset':
+            self._save_kather_msi_features(features=features,
+                                           targets=targets,
+                                           dist_rank=dist_rank,
+                                           chunk_index=chunk_index,
+                                           split=split,
+                                           output_folder=output_folder,
+                                           meta=meta)
+        else:
+            self._original_save_extracted_features(
+                features=features,
+                targets=targets,
+                dist_rank=dist_rank,
+                chunk_index=chunk_index,
+                split=split,
+                output_folder=output_folder
+            )
+
 
     def _extract_split_features(
         self,
@@ -88,6 +189,10 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
 
         chunk_index = 0
         feature_buffer_size = 0
+
+        #TODO get task.data_loader.dataset.__name__ and pass it to save_features and save different meta objects
+        # features per dataset (tile datasets != slide image datasets)
+
         while True:
             try:
                 sample = next(task.data_iterator)
@@ -97,17 +202,18 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                     "input": torch.cat(sample["data"]).cuda(non_blocking=True),
                     "target": torch.cat(sample["label"]).cpu().numpy(),
                     "inds": torch.cat(sample["data_idx"]).cpu().numpy(),
-                    "meta": sample["meta"]
+
                 }
-                out_meta = {key: value.cpu() if isinstance(value, torch.Tensor) else value for key, value in sample["meta"][0].items()} # the dic
-                logging.info(out_meta)
+                if 'meta' in sample.keys():
+                    input_sample["meta"] = sample["meta"]
+                    out_meta = {key: value.cpu() if isinstance(value, torch.Tensor) else value for key, value in sample["meta"][0].items()} # the dic
+                else:
+                    out_meta = {}
+
                 with torch.no_grad():
                     features = task.model(input_sample["input"])
                     flat_features_list = self._flatten_features_list(features)
                     num_images = input_sample["inds"].shape[0]
-                    print(f'\n\n num_images = {num_images}')
-                    print(f'\n\n num_paths = {len(out_meta["path"])}')
-                    print(f'\n\n num_region_index = {len(out_meta["region_index"])}')
                     feature_buffer_size += num_images
                     for num, feat_name in enumerate(feat_names):
                         #TODO Fix these global indices... using local at the top, global here.
@@ -124,13 +230,16 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                     >= 0
                 ):
                     self._save_extracted_features(
+                        self=self,
                         features=out_features,
                         targets=out_targets,
                         dist_rank=dist_rank,
                         chunk_index=chunk_index,
                         split=split_name,
                         output_folder=output_folder,
-                        meta=out_meta
+                        meta=out_meta,
+                        #TODO CHECK IF THIS WORKS
+                        dataset_name=type(task.dataloaders.dataset).__name__
                     )
                     for layer_name in out_features.keys():
                         out_features[layer_name].clear()
@@ -139,12 +248,15 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
 
             except StopIteration:
                 self._save_extracted_features(
+                    self=self,
                     features=out_features,
                     targets=out_targets,
                     dist_rank=dist_rank,
                     chunk_index=chunk_index,
                     split=split_name,
                     output_folder=output_folder,
-                    meta=out_meta
+                    meta=out_meta,
+                    # TODO CHECK IF THIS WORKS
+                    dataset_name=type(task.dataloaders.dataset).__name__
                 )
                 break

@@ -49,15 +49,15 @@ class GenericSSLDatasetHissl(GenericSSLDataset):
         # could be different.
         item = {"data": [], "data_valid": [], "data_idx": [], "meta": []}
         for data_source in self.data_objs:
-            if type(data_source).__name__ == "DLUPSlideImageDataset":
+            if type(data_source).__name__ in ["DLUPSlideImageDataset", "KatherMSIDataset"]:
                 data, valid, meta = data_source[subset_idx]
+                item["meta"].append(meta)
             else:
                 data, valid = data_source[subset_idx]
-                meta = {None}
             item["data"].append(data)
             item["data_idx"].append(idx)
             item["data_valid"].append(1 if valid else -1)
-            item["meta"].append(meta)
+
 
         # There are three types of label_type (data labels): "standard",
         # "sample_index", and "zero". "standard" uses the labels associated
