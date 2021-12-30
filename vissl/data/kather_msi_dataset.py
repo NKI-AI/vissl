@@ -16,6 +16,8 @@ class KatherMSIDataset(DiskImageDataset):
     """
 
     def __init__(self, *args, **kwargs):
+        # Essentially, we're using a disk filelst, except that our getitem returns some metadata
+        kwargs['data_source'] = 'disk_filelist'
         super(KatherMSIDataset, self).__init__(*args, **kwargs)
 
     def __getitem__(self, idx: int):
@@ -35,7 +37,7 @@ class KatherMSIDataset(DiskImageDataset):
         # Extract patient ID from tile name
         filename_without_extension = Path(image_path).stem
         slide_id = str.join('-', filename_without_extension.split('-')[2:])
-        case_id = str.join(filename_without_extension.split('-')[2:5])
+        case_id = str.join('-', filename_without_extension.split('-')[2:5])
 
         meta = {'path': image_path,
                 'slide_id': slide_id,
