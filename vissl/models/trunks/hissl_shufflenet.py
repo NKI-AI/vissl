@@ -30,6 +30,7 @@ class ShufflenetGlobalpool(nn.Module):
 
 @register_model_trunk("shufflenet")
 class HisslShuffleNet(nn.Module):
+    #TODO Remove self.model, this isn't used and doesn't need to be saved
     """
     Implements the standard TorchVision ShufflenetV2 model.
     Currently, this does not have as many technical features as the models originally
