@@ -6,6 +6,7 @@
 import logging
 import os
 from typing import Dict, List
+from pathlib import Path
 
 try:
     import h5py
@@ -92,19 +93,19 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
         output_folder: str,
         meta: Dict,
     ):
-        with h5py.File(os.path.join(output_folder, f"rank{dist_rank}_chunk{chunk_index}_{split.lower()}_output.hd5"),
+        with h5py.File(os.path.join(output_folder, f"rank{dist_rank}_{split.lower()}_output.hd5"),
                        "a") as f:
             for layer_name in features.keys():
                 indices = sorted(features[layer_name].keys())
                 if len(indices) > 0:
                     for i in indices:
-                        f[f"{meta['path'][i]}/{str(i)}/data/{layer_name}"] = \
+                        f[f"{meta[layer_name][i]['path']}/{str(i)}/data/{layer_name}"] = \
                             features[layer_name][i]
-                        f[f"{meta['path'][i]}/{str(i)}/target"] = \
+                        f[f"{meta[layer_name][i]['path']}/{str(i)}/target"] = \
                             targets[layer_name][i]
-                        for item in ['x', 'y', 'h', 'w', 'mpp']:
-                            f[f"{meta['path'][i]}/{str(int(meta['region_index'][i]))}/meta/{item}"] = \
-                                meta[item][i]
+                        for item in ['x', 'y', 'h', 'w', 'mpp', 'region_index']:
+                            f[f"{meta[layer_name][i]['path']}/{str(i)}/meta/{item}"] = \
+                                meta[layer_name][i][item]
 
     @staticmethod
     def _save_kather_msi_features(
@@ -116,19 +117,56 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
         output_folder: str,
         meta: Dict,
     ):
-        with h5py.File(os.path.join(output_folder, f"rank{dist_rank}_chunk{chunk_index}_{split.lower()}_output.hd5"),
+        # """
+        # Note that this cannot currently be run with more than 1 GPU. Please set num_GPUs to 1.
+        # """
+        #
+        # if chunk_index > 0:
+        #     raise NotImplementedError
+
+        # if not (Path(output_folder) / split.lower()).is_dir():
+        #     Path.mkdir((Path(output_folder) / split.lower()))
+        #
+        # for layer_name in features.keys():
+        #     indices = sorted(features[layer_name].keys())
+        #     if len(indices) > 0:
+        #         for i in indices:
+        #             with h5py.File(os.path.join(output_folder, split.lower(), f"rank{dist_rank}_{meta[layer_name][i]['slide_id']}_output.hd5"),
+        #                            "a") as f:
+        #                 f["meta/slide_id"] = ""
+        #                 f["meta/case_id"] = ""
+        #                 f["meta/root"] = ""
+        #                 f["data/targets"] = ""
+        #                 f[f"data/features/{layer_name}"] = features[layer_name][i]
+        #                 f["data/paths"] = ""
+        #
+        #                 f[f"{meta[layer_name][i]['path']}/data/{layer_name}"] = \
+        #
+        #                 f[f"{meta[layer_name][i]['path']}/target"] = \
+        #                     targets[layer_name][i]
+        #                 f[f"{meta[layer_name][i]['path']}/meta/vissl_id"] = \
+        #                     i
+        #
+        #                 for item in ['case_id', 'slide_id']:
+        #                     f[f"{meta[layer_name][i]['path']}/meta/{item}"] = \
+        #                         meta[layer_name][i][item]
+
+        with h5py.File(os.path.join(output_folder, f"rank{dist_rank}_{split.lower()}_output.hd5"),
                        "a") as f:
             for layer_name in features.keys():
                 indices = sorted(features[layer_name].keys())
                 if len(indices) > 0:
                     for i in indices:
-                        f[f"{meta['path'][i]}/{str(i)}/data/{layer_name}"] = \
+                        f[f"{meta[layer_name][i]['path']}/data/{layer_name}"] = \
                             features[layer_name][i]
-                        f[f"{meta['path'][i]}/{str(i)}/target"] = \
+                        f[f"{meta[layer_name][i]['path']}/target"] = \
                             targets[layer_name][i]
+                        f[f"{meta[layer_name][i]['path']}/meta/vissl_id"] = \
+                            i
+
                         for item in ['case_id', 'slide_id']:
-                            f[f"{meta['path'][i]}/{str(i)}/meta/{item}"] = \
-                                meta[item][i]
+                            f[f"{meta[layer_name][i]['path']}/meta/{item}"] = \
+                                meta[layer_name][i][item]
 
 
     @staticmethod
@@ -145,7 +183,7 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
     ):
         #TODO Save hd5 per wsi
         #TODO if we want to do this, we need to do something smarter, otherwise a million file open and closes.
-        if dataset_name == 'DLUPSlideImageDataset':
+        if dataset_name == 'dlup_wsi':
             self._save_dlup_wsi_features(features=features,
                                          targets=targets,
                                          dist_rank=dist_rank,
@@ -153,7 +191,7 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                                          split=split,
                                          output_folder=output_folder,
                                          meta=meta)
-        elif dataset_name == 'KatherMSIDataset':
+        elif dataset_name == 'kather_msi_dataset':
             self._save_kather_msi_features(features=features,
                                            targets=targets,
                                            dist_rank=dist_rank,
@@ -180,12 +218,20 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
         output_folder: str,
     ):
         task.model.eval()
+
+        data_sources = self.cfg.DATA[split_name].DATA_SOURCES
+        if len(data_sources) > 1:
+            logging.error("Hissl can only extract features when a single data source type is given")
+            raise NotImplementedError
+        data_source = data_sources[0]
+
         logging.info("Model set to eval mode during feature extraction...")
+
         dist_rank = torch.distributed.get_rank()
 
         out_features, out_targets, out_meta = {}, {}, {}
         for feat_name in feat_names:
-            out_features[feat_name], out_targets[feat_name] = {}, {}
+            out_features[feat_name], out_targets[feat_name], out_meta[feat_name] = {}, {}, {}
 
         chunk_index = 0
         feature_buffer_size = 0
@@ -195,6 +241,7 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
 
         while True:
             try:
+                logging.info(f"Batch #{chunk_index} being saved...")
                 sample = next(task.data_iterator)
                 assert isinstance(sample, dict)
                 assert "data_idx" in sample, "Indices not passed"
@@ -204,25 +251,27 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                     "inds": torch.cat(sample["data_idx"]).cpu().numpy(),
 
                 }
-                if 'meta' in sample.keys():
-                    input_sample["meta"] = sample["meta"]
-                    out_meta = {key: value.cpu() if isinstance(value, torch.Tensor) else value for key, value in sample["meta"][0].items()} # the dic
-                else:
-                    out_meta = {}
+                if "meta" in sample.keys():
+                    input_meta = sample["meta"][0]
 
                 with torch.no_grad():
                     features = task.model(input_sample["input"])
                     flat_features_list = self._flatten_features_list(features)
                     num_images = input_sample["inds"].shape[0]
                     feature_buffer_size += num_images
-                    for num, feat_name in enumerate(feat_names):
+                    for feat_num, feat_name in enumerate(feat_names):
                         #TODO Fix these global indices... using local at the top, global here.
-                        feature = flat_features_list[num].cpu().numpy()
+                        feature = flat_features_list[feat_num].cpu().numpy()
                         targets = input_sample["target"]
-                        for idx in range(num_images):
-                            index = input_sample["inds"][idx]
-                            out_features[feat_name][index] = feature[idx]
-                            out_targets[feat_name][index] = targets[idx].reshape(-1)
+                        for img_idx in range(num_images):
+                            dataset_index = input_sample["inds"][img_idx]
+                            # The dataset index is set as a key in out_features and out_targets and out_meta
+                            if 'meta' in sample.keys():
+                                # out_meta = {key: value.cpu() if isinstance(value, torch.Tensor) else value for
+                                #             key, value in sample["meta"][0].items()}  # the dic
+                                out_meta[feat_name][dataset_index] = {key: value.cpu()[img_idx] if isinstance(value, torch.Tensor) else value[img_idx] for key, value in input_meta.items()}
+                            out_features[feat_name][dataset_index] = feature[img_idx]
+                            out_targets[feat_name][dataset_index] = targets[img_idx].reshape(-1)
 
                 if(
                     feature_buffer_size
@@ -238,8 +287,8 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                         split=split_name,
                         output_folder=output_folder,
                         meta=out_meta,
-                        #TODO CHECK IF THIS WORKS
-                        dataset_name=type(task.dataloaders.dataset).__name__
+                        #TODO CHECK IF THIS WORKS <-- it should now
+                        dataset_name=data_source
                     )
                     for layer_name in out_features.keys():
                         out_features[layer_name].clear()
@@ -256,7 +305,7 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                     split=split_name,
                     output_folder=output_folder,
                     meta=out_meta,
-                    # TODO CHECK IF THIS WORKS
-                    dataset_name=type(task.dataloaders.dataset).__name__
+                    # TODO CHECK IF THIS WORKS <-- it should now
+                    dataset_name=data_source
                 )
                 break
