@@ -1,6 +1,7 @@
 # coding=utf-8
 # Copyright (c) HISSL Contributors
 
+import logging
 from vissl.data.disk_dataset import DiskImageDataset
 from pathlib import Path
 
@@ -16,7 +17,7 @@ class KatherMSIDataset(DiskImageDataset):
     """
 
     def __init__(self, *args, **kwargs):
-        # Essentially, we're using a disk filelst, except that our getitem returns some metadata
+        # Essentially, we're using a disk filelist, except that our getitem returns some metadata
         kwargs['data_source'] = 'disk_filelist'
         super(KatherMSIDataset, self).__init__(*args, **kwargs)
 
