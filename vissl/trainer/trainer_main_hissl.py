@@ -120,37 +120,6 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
         # """
         # Note that this cannot currently be run with more than 1 GPU. Please set num_GPUs to 1.
         # """
-        #
-        # if chunk_index > 0:
-        #     raise NotImplementedError
-
-        # if not (Path(output_folder) / split.lower()).is_dir():
-        #     Path.mkdir((Path(output_folder) / split.lower()))
-        #
-        # for layer_name in features.keys():
-        #     indices = sorted(features[layer_name].keys())
-        #     if len(indices) > 0:
-        #         for i in indices:
-        #             with h5py.File(os.path.join(output_folder, split.lower(), f"rank{dist_rank}_{meta[layer_name][i]['slide_id']}_output.hd5"),
-        #                            "a") as f:
-        #                 f["meta/slide_id"] = ""
-        #                 f["meta/case_id"] = ""
-        #                 f["meta/root"] = ""
-        #                 f["data/targets"] = ""
-        #                 f[f"data/features/{layer_name}"] = features[layer_name][i]
-        #                 f["data/paths"] = ""
-        #
-        #                 f[f"{meta[layer_name][i]['path']}/data/{layer_name}"] = \
-        #
-        #                 f[f"{meta[layer_name][i]['path']}/target"] = \
-        #                     targets[layer_name][i]
-        #                 f[f"{meta[layer_name][i]['path']}/meta/vissl_id"] = \
-        #                     i
-        #
-        #                 for item in ['case_id', 'slide_id']:
-        #                     f[f"{meta[layer_name][i]['path']}/meta/{item}"] = \
-        #                         meta[layer_name][i][item]
-
         with h5py.File(os.path.join(output_folder, f"rank{dist_rank}_{split.lower()}_output.hd5"),
                        "a") as f:
             for layer_name in features.keys():
@@ -181,8 +150,7 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
         meta: Dict,
         dataset_name: str
     ):
-        #TODO Save hd5 per wsi
-        #TODO if we want to do this, we need to do something smarter, otherwise a million file open and closes.
+        #TODO Save hd5 per wsi. Currently done retrospectively in DLUP-LIGHTNING-MIL
         if dataset_name == 'dlup_wsi':
             self._save_dlup_wsi_features(features=features,
                                          targets=targets,
@@ -236,9 +204,6 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
         chunk_index = 0
         feature_buffer_size = 0
 
-        #TODO get task.data_loader.dataset.__name__ and pass it to save_features and save different meta objects
-        # features per dataset (tile datasets != slide image datasets)
-
         while True:
             try:
                 logging.info(f"Batch #{chunk_index} being saved...")
@@ -260,7 +225,7 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                     num_images = input_sample["inds"].shape[0]
                     feature_buffer_size += num_images
                     for feat_num, feat_name in enumerate(feat_names):
-                        #TODO Fix these global indices... using local at the top, global here.
+                        #TODO Fix these global indices. Local and global features are confusing.
                         feature = flat_features_list[feat_num].cpu().numpy()
                         targets = input_sample["target"]
                         for img_idx in range(num_images):
@@ -287,7 +252,6 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                         split=split_name,
                         output_folder=output_folder,
                         meta=out_meta,
-                        #TODO CHECK IF THIS WORKS <-- it should now
                         dataset_name=data_source
                     )
                     for layer_name in out_features.keys():
@@ -305,7 +269,6 @@ class SelfSupervisionTrainerHissl(SelfSupervisionTrainer):
                     split=split_name,
                     output_folder=output_folder,
                     meta=out_meta,
-                    # TODO CHECK IF THIS WORKS <-- it should now
                     dataset_name=data_source
                 )
                 break
