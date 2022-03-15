@@ -30,7 +30,6 @@ class ShufflenetGlobalpool(nn.Module):
 
 @register_model_trunk("shufflenet")
 class HisslShuffleNet(nn.Module):
-    #TODO Remove self.model, this isn't used and doesn't need to be saved
     """
     Implements the standard TorchVision ShufflenetV2 model.
     Currently, this does not have as many technical features as the models originally
@@ -78,6 +77,8 @@ class HisslShuffleNet(nn.Module):
         model_layer6 = self.model.conv5
         model_layer7 = ShufflenetGlobalpool()
 
+        del self.model
+
         # these features can be used for other purposes: like
         # feature extraction etc.
         self._feature_blocks = nn.ModuleDict(
@@ -98,7 +99,6 @@ class HisslShuffleNet(nn.Module):
         # See the forward pass of resnext.py for reference of how additional features
         # can be implemented. For now, we do not require these advanced features.
 
-        # TODO implement more advanced features. See vissl's resnext implementation
         if len(out_feat_keys) > 0:
             raise NotImplementedError
 
