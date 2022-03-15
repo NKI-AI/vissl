@@ -248,6 +248,9 @@ class DLUPSlideImageDataset:
         # --------------------------
         # Build dataset
         # --------------------------
+        #TODO add possibility of having
+        # 1. a train and a test set
+        # 2. multiple paths to masks in a list, similarly to VISSL's dataset.
         single_wsi_datasets: list = []
         logging.info(f"Building dataset...")
         for idx, relative_wsi_path in enumerate(self.relative_wsi_paths):
